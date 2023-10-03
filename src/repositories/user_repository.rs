@@ -2,53 +2,95 @@ extern crate dotenv;
 use super::mongo_repository::MongoRepo;
 use crate::models::user_model::UserModel;
 use crate::utils::helper;
-use mongodb::{
-    bson::{doc, extjson::de::Error, oid::ObjectId},
-    results::InsertOneResult,
-};
+use crate::utils::string;
+use mongodb::bson::doc;
+use mongodb::bson::to_document;
+use mongodb::{bson::extjson::de::Error, results::InsertOneResult};
+
 impl MongoRepo {
-    pub fn create_user(&self, user: &UserModel) -> Result<InsertOneResult, Error> {
+    pub fn register_user(&self, user: &UserModel) -> Result<InsertOneResult, Error> {
         let new_doc = UserModel {
             id: None,
-            user_name: user.user_name.to_owned(),
-            password: helper::encryption(user.password.to_owned()),
+            email: user.email.to_owned(),
+            password: Some(helper::encryption(user.password.to_owned().unwrap())),
             display_name: user.display_name.to_owned(),
         };
 
-        let insert_result = self.user_col.insert_one(new_doc, None);
-        match insert_result {
-            Ok(user) => Ok(user),
-            Err(error) => {
-                println!("{:?}", error);
+        let exits_user = self.user_col.find(doc! {"email": &new_doc.email}, None);
+        match exits_user {
+            Ok(_) => {
                 return Err(Error::DeserializationError {
-                    message: error.to_string(),
+                    message: string::EMAIL_EXITS.to_string(),
                 });
             }
-        }
-    }
-
-    pub fn get_user(&self, id: &String) -> Result<Option<UserModel>, Error> {
-        let obj_id = ObjectId::parse_str(id);
-
-        match obj_id {
-            Ok(_id) => {
-                println!("{:?}", _id);
-                let filter = doc! {"_id": _id};
-
-                let user_detail = self.user_col.find_one(filter, None);
-
-                match user_detail {
+            Err(_) => {
+                let insert_result = self.user_col.insert_one(new_doc, None);
+                match insert_result {
                     Ok(user) => Ok(user),
                     Err(error) => {
                         return Err(Error::DeserializationError {
                             message: error.to_string(),
-                        })
+                        });
                     }
                 }
             }
-            Err(n) => {
-                println!("{:?}", n);
-                return Err(Error::InvalidObjectId(n));
+        }
+    }
+
+    pub fn find_user(&self, user: &UserModel) -> Result<UserModel, Error> {
+        let new_doc = UserModel {
+            id: if user.id.is_none() {
+                None
+            } else {
+                user.id.to_owned()
+            },
+            email: if user.email.is_none() {
+                None
+            } else {
+                user.email.to_owned()
+            },
+            password: if user.password.is_none() {
+                None
+            } else {
+                Some(helper::encryption(user.password.to_owned().unwrap()))
+            },
+
+            display_name: if user.display_name.is_none() {
+                None
+            } else {
+                user.display_name.to_owned()
+            },
+        };
+        let filter = to_document(&new_doc);
+        match filter {
+            Ok(doc) => {
+                let find_result = self.user_col.find_one(doc, None);
+                match find_result {
+                    Ok(user) => match user {
+                        Some(result) => {
+                            let mut user_sponse = result.clone();
+                            user_sponse.password =
+                                Some(helper::decryption(user_sponse.password.unwrap().to_owned()));
+
+                            Ok(user_sponse)
+                        }
+                        None => {
+                            return Err(Error::DeserializationError {
+                                message: string::NOT_FOUND.to_string(),
+                            });
+                        }
+                    },
+                    Err(error) => {
+                        return Err(Error::DeserializationError {
+                            message: error.to_string(),
+                        });
+                    }
+                }
+            }
+            Err(error) => {
+                return Err(Error::DeserializationError {
+                    message: error.to_string(),
+                });
             }
         }
     }

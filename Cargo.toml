@@ -6,12 +6,17 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rocket = {version = "0.5.0-rc.3", features = ["json"]}
+rocket = { version = "0.5.0-rc.3", features = ["json"] }
 serde = "1.0.136"
 dotenv = "0.15.0"
 magic-crypt = "3.1.9"
+email_address = "0.2.4"
+rocket-jwt = "0.5.1"
+jsonwebtoken = "8.3.0"
+rocket_cors = { git = "https://github.com/lawliet89/rocket_cors", branch = "master" }
+
 
 [dependencies.mongodb]
 version = "2.7.0"
 default-features = false
-features = ["sync"] 
+features = ["sync"]

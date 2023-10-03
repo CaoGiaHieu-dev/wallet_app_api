@@ -4,12 +4,16 @@ extern crate rocket;
 #[macro_use]
 extern crate magic_crypt;
 
-//add imports below
 use end_point::user_end_point;
 use repositories::mongo_repository::MongoRepo;
+use rocket_cors::{AllowedHeaders, AllowedOrigins, CorsOptions};
+
 use utils::routes;
 
+use rocket::{http::Method, routes};
+
 mod end_point;
+mod middleware;
 mod models;
 mod repositories;
 mod utils;
@@ -17,8 +21,24 @@ mod utils;
 #[launch]
 fn rocket() -> _ {
     let db = MongoRepo::init();
-    rocket::build().manage(db).mount(
+
+    let cors = CorsOptions::default()
+        .allowed_origins(AllowedOrigins::all())
+        .allowed_headers(AllowedHeaders::All)
+        .allowed_methods(
+            vec![Method::Get, Method::Post, Method::Patch, Method::Delete]
+                .into_iter()
+                .map(From::from)
+                .collect(),
+        )
+        .allow_credentials(true);
+
+    rocket::build().manage(db).manage(cors.to_cors()).mount(
         routes::USER,
-        routes![user_end_point::create, user_end_point::get],
+        routes![
+            user_end_point::register,
+            user_end_point::find_user,
+            user_end_point::login
+        ],
     )
 }

@@ -1,13 +1,18 @@
+use email_address::*;
 use magic_crypt::MagicCryptTrait;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
- const CRYPT_KEY: &str = "my private key";
+const CRYPT_KEY: &str = "my private key";
 
 pub fn get_current_time() -> u128 {
     let start = SystemTime::now();
     let since_the_epoch: u128 = start.duration_since(UNIX_EPOCH).ok().unwrap().as_millis();
     return since_the_epoch;
+}
+
+pub fn validate_email(data: String) -> bool {
+    return EmailAddress::is_valid(&data);
 }
 
 pub fn encryption(data: String) -> String {
