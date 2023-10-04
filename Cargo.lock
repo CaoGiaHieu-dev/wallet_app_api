@@ -432,7 +432,9 @@ checksum = "7f2c685bad3eb3d45a01354cedb7d5faa66194d1d58ba6e267a8de788f79db38"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
+ "js-sys",
  "num-traits",
+ "wasm-bindgen",
  "windows-targets",
 ]
 
@@ -2820,6 +2822,7 @@ checksum = "f3c4517f54858c779bbcbf228f4fca63d121bf85fbecb2dc578cdf4a39395690"
 name = "wallet_app"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "dotenv",
  "email_address",
  "jsonwebtoken",
@@ -2829,6 +2832,7 @@ dependencies = [
  "rocket-jwt",
  "rocket_cors",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

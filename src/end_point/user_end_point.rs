@@ -1,7 +1,10 @@
+use crate::models::token_model::JWT;
 use crate::models::user_model::UserModel;
 use crate::repositories::mongo_repository::MongoRepo;
-use crate::utils::helper;
-use crate::{models::base_model::BaseModel, utils::string};
+use crate::utils::helper::{self, create_jwt, encryption, get_current_time};
+use crate::utils::{status_code, ErrorResponse};
+use crate::{models::base_model::BaseModel, utils::constants};
+use mongodb::bson::doc;
 use mongodb::bson::oid::ObjectId;
 use rocket::{http::Status, serde::json::Json, State};
 
@@ -11,11 +14,11 @@ pub fn register(
     new_user: Json<UserModel>,
 ) -> Result<Json<BaseModel<UserModel>>, Status> {
     if new_user.email.is_none() || new_user.password.is_none() {
-        return Err(Status::BadRequest);
+        return Ok(BaseModel::bad_request(None));
     } else if new_user.email.to_owned().unwrap().is_empty()
         || new_user.password.to_owned().unwrap().is_empty()
     {
-        return Err(Status::BadRequest);
+        return Ok(BaseModel::bad_request(None));
     }
 
     let mut data = UserModel {
@@ -23,72 +26,113 @@ pub fn register(
         email: new_user.email.to_owned(),
         password: new_user.password.to_owned(),
         display_name: new_user.display_name.to_owned(),
+        ..Default::default()
     };
     if helper::validate_email(data.email.to_owned().unwrap().to_owned()) {
         let user_detail = db.register_user(&data);
 
         match user_detail {
             Ok(user) => {
-                data.id = user.inserted_id.as_object_id();
-                let response: BaseModel<UserModel> = BaseModel {
-                    status: 200,
+                let user_id = user.inserted_id.as_object_id().expect("Cannot get user id");
+                data.id = Some(user_id.clone());
+
+                let response = BaseModel {
+                    status: status_code::SUCCESS,
                     time_stamp: helper::get_current_time(),
                     data: Some(data),
-                    message: None,
+                    ..Default::default()
                 };
-                Ok(Json(response))
+
+                Ok(response.success())
             }
-            Err(e) => {
-                let mut response = BaseModel {
-                    status: 500,
-                    time_stamp: helper::get_current_time(),
-                    data: None,
-                    message: Some(e.to_string()),
-                };
-                match e {
-                    mongodb::bson::extjson::de::Error::DeserializationError { message } => {
-                        println!("{:?}", message);
-                        if message == string::EMAIL_EXITS {
-                            response.status = 400;
-                            Ok(Json(response))
-                        } else {
-                            return Err(Status::BadRequest);
-                        }
-                    }
-                    _ => return Ok(Json(response)),
+            Err(e) => match e {
+                mongodb::bson::extjson::de::Error::DeserializationError { message } => {
+                    Ok(BaseModel::bad_request(Some(message)))
                 }
-            }
+                _ => Ok(BaseModel::internal_error(Some(e.to_string()))),
+            },
         }
     } else {
-        let response: BaseModel<UserModel> = BaseModel {
-            status: 400,
-            time_stamp: helper::get_current_time(),
-            data: None,
-            message: Some(string::INVALID_EMAIL.to_string()),
-        };
-        return Ok(Json(response));
+        return Ok(BaseModel::bad_request(Some(
+            constants::INVALID_EMAIL.to_string(),
+        )));
     }
 }
 
-#[get("/login", format = "application/json", data = "<user>")]
+#[post("/login", format = "application/json", data = "<user>")]
 pub fn login(
     db: &State<MongoRepo>,
     user: Json<UserModel>,
 ) -> Result<Json<BaseModel<UserModel>>, Status> {
-    let user_info = user.into_inner();
+    let mut user_info = user.clone().into_inner();
     if user_info.email.is_none() || user_info.password.is_none() {
-        return Err(Status::BadRequest);
+        return Ok(BaseModel::bad_request(None));
     } else if user_info.email.to_owned().unwrap().is_empty()
         || user_info.password.to_owned().unwrap().is_empty()
     {
-        return Err(Status::BadRequest);
+        return Ok(BaseModel::bad_request(None));
     }
 
-    return find_in_db(db, user_info);
+    if helper::validate_email(user_info.email.to_owned().unwrap().to_owned()) {
+        user_info.password = Some(encryption(user_info.password.to_owned().unwrap()));
+        let user_detail = db.find_user(&user_info);
+
+        match user_detail {
+            Ok(user) => {
+                let id = user.id.expect("Cannot find user id");
+                let token = create_jwt(id).expect("Cannot generate token");
+
+                let mut user_update = user.clone();
+                user_update.token = Some(token);
+                user_update.password = Some(encryption(user.password.to_owned().unwrap()));
+
+                let mut user_query = user.clone();
+                user_query.password = Some(encryption(user.password.to_owned().unwrap()));
+
+                match db.update_user(&user_query, &user_update) {
+                    Ok(update) => {
+                        let response: BaseModel<UserModel> = BaseModel {
+                            status: status_code::SUCCESS,
+                            time_stamp: helper::get_current_time(),
+                            data: Some(update),
+                            ..Default::default()
+                        };
+                        Ok(response.success())
+                    }
+                    Err(e) => Ok(BaseModel::internal_error(Some(e.to_string()))),
+                }
+            }
+            Err(e) => match e {
+                mongodb::bson::extjson::de::Error::DeserializationError { message } => {
+                    Ok(BaseModel::not_found(Some(message)))
+                }
+                _ => Ok(BaseModel::internal_error(Some(e.to_string()))),
+            },
+        }
+    } else {
+        return Ok(BaseModel::bad_request(Some(
+            constants::INVALID_EMAIL.to_string(),
+        )));
+    }
 }
 
 #[get("/<id>", format = "application/json")]
-pub fn find_user(db: &State<MongoRepo>, id: String) -> Result<Json<BaseModel<UserModel>>, Status> {
+pub fn find_user(
+    db: &State<MongoRepo>,
+    id: String,
+    key: Result<JWT, ErrorResponse>,
+) -> Result<Json<BaseModel<UserModel>>, Status> {
+    if key.is_err() {
+        let error = key.err().unwrap().into_inner();
+        let response_model: BaseModel<UserModel> = BaseModel {
+            status: error.status,
+            time_stamp: get_current_time(),
+            message: error.message,
+            ..Default::default()
+        };
+        return Ok(response_model.error());
+    }
+
     if id.is_empty() {
         return Err(Status::BadRequest);
     };
@@ -98,9 +142,7 @@ pub fn find_user(db: &State<MongoRepo>, id: String) -> Result<Json<BaseModel<Use
         Ok(user_id) => {
             let user_info = UserModel {
                 id: Some(user_id),
-                email: None,
-                password: None,
-                display_name: None,
+                ..Default::default()
             };
 
             return find_in_db(db, user_info);
@@ -118,7 +160,7 @@ fn find_in_db(
     let user_detail = db.find_user(&user_info);
     match user_detail {
         Ok(user) => Ok(Json(BaseModel {
-            status: 200,
+            status: status_code::SUCCESS,
             time_stamp: helper::get_current_time(),
             data: Some(user),
             message: None,
@@ -126,16 +168,16 @@ fn find_in_db(
         Err(e) => match e {
             mongodb::bson::extjson::de::Error::DeserializationError { message } => {
                 let mut response: BaseModel<UserModel> = BaseModel {
-                    status: 500,
+                    status: status_code::INTERNAL_SERVER_ERROR,
                     time_stamp: helper::get_current_time(),
                     data: None,
                     message: Some(message.clone()),
                 };
-                if message == string::NOT_FOUND {
-                    response.status = 400;
-                    Ok(Json(response))
+                if message == constants::NOT_FOUND {
+                    response.status = status_code::NOT_FOUND;
+                    Ok(response.error())
                 } else {
-                    Ok(Json(response))
+                    Ok(response.error())
                 }
             }
             _ => Err(Status::InternalServerError),

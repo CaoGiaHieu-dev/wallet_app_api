@@ -1,28 +1,40 @@
 extern crate dotenv;
 use super::mongo_repository::MongoRepo;
 use crate::models::user_model::UserModel;
+use crate::utils::constants;
 use crate::utils::helper;
-use crate::utils::string;
+use mongodb::bson;
 use mongodb::bson::doc;
 use mongodb::bson::to_document;
+use mongodb::options::UpdateOptions;
 use mongodb::{bson::extjson::de::Error, results::InsertOneResult};
 
 impl MongoRepo {
     pub fn register_user(&self, user: &UserModel) -> Result<InsertOneResult, Error> {
-        let new_doc = UserModel {
-            id: None,
-            email: user.email.to_owned(),
-            password: Some(helper::encryption(user.password.to_owned().unwrap())),
-            display_name: user.display_name.to_owned(),
-        };
+        let mut new_doc = user.clone();
+        new_doc.password = Some(helper::encryption(user.password.to_owned().unwrap()));
 
-        let exits_user = self.user_col.find(doc! {"email": &new_doc.email}, None);
+        let exits_user = self.user_col.find_one(doc! {"email": &new_doc.email}, None);
+
         match exits_user {
-            Ok(_) => {
-                return Err(Error::DeserializationError {
-                    message: string::EMAIL_EXITS.to_string(),
-                });
-            }
+            Ok(user) => match user {
+                Some(_) => {
+                    return Err(Error::DeserializationError {
+                        message: constants::EMAIL_EXITS.to_string(),
+                    });
+                }
+                None => {
+                    let insert_result = self.user_col.insert_one(new_doc, None);
+                    match insert_result {
+                        Ok(user) => Ok(user),
+                        Err(error) => {
+                            return Err(Error::DeserializationError {
+                                message: error.to_string(),
+                            });
+                        }
+                    }
+                }
+            },
             Err(_) => {
                 let insert_result = self.user_col.insert_one(new_doc, None);
                 match insert_result {
@@ -38,45 +50,23 @@ impl MongoRepo {
     }
 
     pub fn find_user(&self, user: &UserModel) -> Result<UserModel, Error> {
-        let new_doc = UserModel {
-            id: if user.id.is_none() {
-                None
-            } else {
-                user.id.to_owned()
-            },
-            email: if user.email.is_none() {
-                None
-            } else {
-                user.email.to_owned()
-            },
-            password: if user.password.is_none() {
-                None
-            } else {
-                Some(helper::encryption(user.password.to_owned().unwrap()))
-            },
-
-            display_name: if user.display_name.is_none() {
-                None
-            } else {
-                user.display_name.to_owned()
-            },
-        };
-        let filter = to_document(&new_doc);
-        match filter {
+        match to_document(user) {
             Ok(doc) => {
                 let find_result = self.user_col.find_one(doc, None);
                 match find_result {
                     Ok(user) => match user {
                         Some(result) => {
-                            let mut user_sponse = result.clone();
-                            user_sponse.password =
-                                Some(helper::decryption(user_sponse.password.unwrap().to_owned()));
+                            let mut user_response = result.clone();
+                            user_response.password = Some(helper::decryption(
+                                user_response.password.unwrap().to_owned(),
+                            ));
+                            user_response.token = None;
 
-                            Ok(user_sponse)
+                            Ok(user_response)
                         }
                         None => {
                             return Err(Error::DeserializationError {
-                                message: string::NOT_FOUND.to_string(),
+                                message: constants::NOT_FOUND.to_string(),
                             });
                         }
                     },
@@ -87,6 +77,35 @@ impl MongoRepo {
                     }
                 }
             }
+            Err(error) => {
+                return Err(Error::DeserializationError {
+                    message: error.to_string(),
+                });
+            }
+        }
+    }
+
+    pub fn update_user(&self, query: &UserModel, update: &UserModel) -> Result<UserModel, Error> {
+        let query_doc = to_document(&query).expect("Cannot convert query to doc");
+        let update_doc = to_document(&update).expect("Cannot convert update to doc");
+
+        let options = UpdateOptions::builder().upsert(true).build();
+
+        let find_result = self
+            .user_col
+            .update_one(query_doc, doc! { "$set": update_doc }, options);
+
+        println!("{:?}", &find_result);
+
+        match find_result {
+            Ok(user) => match user.upserted_id {
+                Some(bson_result) => {
+                    let user_from_bson: UserModel = bson::from_bson(bson_result).unwrap();
+
+                    return Ok(user_from_bson);
+                }
+                None => return Ok(update.clone()),
+            },
             Err(error) => {
                 return Err(Error::DeserializationError {
                     message: error.to_string(),
