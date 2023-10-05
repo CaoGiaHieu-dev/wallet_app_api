@@ -10,8 +10,11 @@ pub const EXPIRED_TOKEN_TIME: i64 = 60;
 
 // Error Message
 pub const NOT_FOUND: &'static str = "Not found";
-pub const INVALID_EMAIL: &'static str = "Invalid email";
 pub const EMAIL_EXITS: &'static str = "Email was exits";
 pub const INVALID_TOKEN: &str = "Error validating JWT token";
 pub const EXPIRED_TOKEN: &str = "Expired Token";
 pub const BAD_REQUEST: &str = "Bad Request";
+pub const SOME_THING_WENT_WRONG: &str = "Some thing went wrong";
+pub const INVALID_EMAIL: &'static str = "Invalid email";
+pub const EMAIL_EMPTY: &'static str = "Email cannot empty";
+pub const PASSWORD_EMPTY: &'static str = "Password cannot empty";

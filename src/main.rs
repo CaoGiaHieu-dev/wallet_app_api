@@ -16,6 +16,7 @@ mod end_point;
 mod middleware;
 mod models;
 mod repositories;
+mod service;
 mod utils;
 
 #[launch]

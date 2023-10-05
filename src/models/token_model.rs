@@ -4,9 +4,8 @@ use rocket::http::Status;
 use rocket::request::{FromRequest, Outcome, Request};
 use rocket::serde::{Deserialize, Serialize};
 
-use crate::models::base_model::BaseModel;
-use crate::utils::helper::decode_jwt;
 use crate::utils::ErrorResponse;
+use crate::{models::base_response_model::BaseResponseModel, utils::helper::decode_jwt};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Claims {
@@ -29,7 +28,10 @@ impl<'r> FromRequest<'r> for JWT {
 
         match req.headers().get_one("authorization") {
             None => {
-                return Outcome::Failure((Status::Unauthorized, BaseModel::invalid_token(None)));
+                return Outcome::Failure((
+                    Status::Unauthorized,
+                    BaseResponseModel::invalid_token(None),
+                ));
             }
             Some(key) => match is_valid(key) {
                 Ok(claims) => Outcome::Success(JWT { claims }),
@@ -37,13 +39,13 @@ impl<'r> FromRequest<'r> for JWT {
                     jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
                         return Outcome::Failure((
                             Status::Unauthorized,
-                            BaseModel::expired_token(None),
+                            BaseResponseModel::expired_token(None),
                         ));
                     }
                     _ => {
                         return Outcome::Failure((
                             Status::Unauthorized,
-                            BaseModel::invalid_token(None),
+                            BaseResponseModel::invalid_token(None),
                         ));
                     }
                 },

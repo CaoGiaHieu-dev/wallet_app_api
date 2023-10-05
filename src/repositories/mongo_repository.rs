@@ -7,6 +7,7 @@ use crate::utils::constants;
 
 use mongodb::sync::{Client, Collection};
 
+#[derive(Clone)]
 pub struct MongoRepo {
     pub user_col: Collection<UserModel>,
 }
