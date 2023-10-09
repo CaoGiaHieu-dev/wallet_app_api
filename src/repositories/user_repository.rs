@@ -6,7 +6,6 @@ use crate::utils::helper;
 use mongodb::bson;
 use mongodb::bson::doc;
 use mongodb::bson::to_document;
-use mongodb::options::UpdateOptions;
 use mongodb::{bson::extjson::de::Error, results::InsertOneResult};
 
 impl MongoRepo {
@@ -89,23 +88,27 @@ impl MongoRepo {
         let query_doc = to_document(&query).expect("Cannot convert query to doc");
         let update_doc = to_document(&update).expect("Cannot convert update to doc");
 
-        let options = UpdateOptions::builder().upsert(true).build();
-
         let find_result = self
             .user_col
-            .update_one(query_doc, doc! { "$set": update_doc }, options);
-
-        println!("{:?}", &find_result);
+            .update_one(query_doc, doc! { "$set": update_doc }, None);
 
         match find_result {
-            Ok(user) => match user.upserted_id {
-                Some(bson_result) => {
-                    let user_from_bson: UserModel = bson::from_bson(bson_result).unwrap();
-
-                    return Ok(user_from_bson);
+            Ok(user) => {
+                if user.matched_count == 0 {
+                    return Err(Error::DeserializationError {
+                        message: constants::NOT_FOUND.to_string(),
+                    });
                 }
-                None => return Ok(update.clone()),
-            },
+
+                match user.upserted_id {
+                    Some(bson_result) => {
+                        let user_from_bson: UserModel = bson::from_bson(bson_result).unwrap();
+
+                        return Ok(user_from_bson);
+                    }
+                    None => return Ok(update.clone()),
+                }
+            }
             Err(error) => {
                 return Err(Error::DeserializationError {
                     message: error.to_string(),

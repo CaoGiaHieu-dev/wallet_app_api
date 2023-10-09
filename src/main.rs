@@ -39,7 +39,9 @@ fn rocket() -> _ {
         routes![
             user_end_point::register,
             user_end_point::find_user,
-            user_end_point::login
+            user_end_point::login,
+            user_end_point::update_user,
+            user_end_point::info,
         ],
     )
 }

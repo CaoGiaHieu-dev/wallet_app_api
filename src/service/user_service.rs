@@ -1,9 +1,15 @@
+use image::{io::Reader as ImageReader, ImageFormat};
+use mongodb::bson::oid::ObjectId;
 use rocket::{http::Status, serde::json::Json, State};
+use std::{env, io::Cursor};
 
 use crate::{
     models::{base_response_model::BaseResponseModel, user_model::UserModel},
     repositories::mongo_repository::MongoRepo,
-    utils::{constants, helper, status_code},
+    utils::{
+        constants::{self},
+        helper, status_code,
+    },
 };
 
 #[derive()]
@@ -23,7 +29,7 @@ impl<'a> UserService<'a> {
             return Err(constants::EMAIL_EMPTY.to_string());
         }
 
-        if helper::validate_email(email.to_owned().unwrap().to_owned()) {
+        if !helper::validate_email(email.to_owned().unwrap().to_owned()) {
             return Err(constants::INVALID_EMAIL.to_string());
         }
 
@@ -47,30 +53,92 @@ impl<'a> UserService<'a> {
         user_info: UserModel,
     ) -> Result<Json<BaseResponseModel<UserModel>>, Status> {
         let user_detail = self.0.find_user(&user_info);
+
         match user_detail {
-            Ok(user) => Ok(Json(BaseResponseModel {
-                status: status_code::SUCCESS,
-                time_stamp: helper::get_current_time(),
-                data: Some(user),
-                message: None,
-            })),
+            Ok(user) => Ok(BaseResponseModel::success(Some(user))),
             Err(e) => match e {
                 mongodb::bson::extjson::de::Error::DeserializationError { message } => {
-                    let mut response: BaseResponseModel<UserModel> = BaseResponseModel {
-                        status: status_code::INTERNAL_SERVER_ERROR,
-                        time_stamp: helper::get_current_time(),
-                        message: Some(message.clone()),
-                        ..Default::default()
-                    };
+                    let mut response: Json<BaseResponseModel<UserModel>> =
+                        BaseResponseModel::internal_error(Some(message.clone()));
 
                     if message == constants::NOT_FOUND {
                         response.status = status_code::NOT_FOUND;
                     }
 
-                    Ok(response.self_response())
+                    return Ok(response.0.self_response());
                 }
                 _ => Err(Status::InternalServerError),
             },
+        }
+    }
+
+    pub fn update_to_db(
+        &self,
+        id: ObjectId,
+        user_info: UserModel,
+    ) -> Result<Json<BaseResponseModel<UserModel>>, Status> {
+        if user_info.email.is_some() {
+            let email_validated = UserService::<'a>::validate_email(&user_info.email);
+            if email_validated.is_err() {
+                return Ok(BaseResponseModel::bad_request(email_validated.err()));
+            }
+        }
+
+        if user_info.email.is_some() {
+            let password_validated = UserService::<'a>::validate_password(&user_info.password);
+            if password_validated.is_err() {
+                return Ok(BaseResponseModel::bad_request(password_validated.err()));
+            }
+        }
+
+        let user_update = self.0.update_user(
+            &UserModel {
+                id: Some(id),
+                ..Default::default()
+            },
+            &user_info,
+        );
+
+        if user_update.is_err() {
+            return Ok(BaseResponseModel::internal_error(Some(
+                "Cannot Update".to_string(),
+            )));
+        }
+
+        if user_info.image.is_none() {
+            return Ok(BaseResponseModel::success(Some(user_update.unwrap())));
+        }
+
+        let dynamic_image = match match ImageReader::new(Cursor::new(user_info.image.unwrap()))
+            .with_guessed_format()
+        {
+            Ok(it) => it,
+            Err(err) => {
+                println!("{:?}", err);
+                return Err(Status::InternalServerError);
+            }
+        }
+        .decode()
+        {
+            Ok(it) => it,
+            Err(err) => {
+                println!("{:?}", err);
+                return Err(Status::InternalServerError);
+            }
+        };
+
+        match env::var(constants::ASSET_USER_FOLDER) {
+            Ok(path) => match dynamic_image.save_with_format(path, ImageFormat::Png) {
+                Ok(_) => Ok(BaseResponseModel::success(Some(user_update.unwrap()))),
+                Err(save_error) => {
+                    println!("{:?}", save_error);
+                    return Err(Status::InternalServerError);
+                }
+            },
+            Err(err) => {
+                println!("{:?}", err);
+                return Err(Status::InternalServerError);
+            }
         }
     }
 }

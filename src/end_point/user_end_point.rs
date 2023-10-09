@@ -1,8 +1,10 @@
 use crate::models::base_response_model::BaseResponseModel;
+use crate::models::token_model::JWT;
 use crate::models::user_model::UserModel;
 use crate::repositories::mongo_repository::MongoRepo;
 use crate::service::user_service::UserService;
-use crate::utils::helper::{create_jwt, encryption};
+use crate::utils::helper::{create_jwt, decryption, encryption};
+use crate::utils::ErrorResponse;
 use mongodb::bson::doc;
 use mongodb::bson::oid::ObjectId;
 use rocket::{http::Status, serde::json::Json, State};
@@ -81,7 +83,10 @@ pub fn login(
             user_query.password = Some(encryption(user.password.to_owned().unwrap()));
 
             match db.update_user(&user_query, &user_update) {
-                Ok(update) => Ok(BaseResponseModel::success(Some(update))),
+                Ok(mut update) => {
+                    update.password = Some(decryption(update.password.to_owned().unwrap()));
+                    Ok(BaseResponseModel::success(Some(update)))
+                }
                 Err(e) => Ok(BaseResponseModel::internal_error(Some(e.to_string()))),
             }
         }
@@ -105,8 +110,7 @@ pub fn find_user(
 
     let user_service = UserService::new(db);
 
-    let obj_id = ObjectId::parse_str(id);
-    match obj_id {
+    match ObjectId::parse_str(id) {
         Ok(user_id) => {
             let user_info = UserModel {
                 id: Some(user_id),
@@ -118,5 +122,62 @@ pub fn find_user(
         Err(_) => {
             return Err(Status::BadRequest);
         }
+    }
+}
+
+#[get["/info", format = "application/json"]]
+pub fn info(
+    db: &State<MongoRepo>,
+    token: Result<JWT, ErrorResponse>,
+) -> Result<Json<BaseResponseModel<UserModel>>, Status> {
+    if token.is_err() {
+        let error = token.err().unwrap().into_inner();
+
+        let response_model = BaseResponseModel {
+            status: error.status,
+            time_stamp: error.time_stamp,
+            message: error.message,
+            ..Default::default()
+        };
+        return Ok(response_model.self_response());
+    }
+
+    let user_service = UserService::new(db);
+
+    let user_info = UserModel {
+        id: Some(token.unwrap().claims.id),
+        ..Default::default()
+    };
+
+    match user_service.find_in_db(user_info) {
+        Ok(user_in_db) => Ok(user_in_db),
+        Err(error) => Err(error),
+    }
+}
+
+#[post["/update_user", format = "application/json",data ="<user>"]]
+pub fn update_user(
+    db: &State<MongoRepo>,
+    user: Json<UserModel>,
+    token: Result<JWT, ErrorResponse>,
+) -> Result<Json<BaseResponseModel<UserModel>>, Status> {
+    if token.is_err() {
+        let error = token.err().unwrap().into_inner();
+
+        let response_model = BaseResponseModel {
+            status: error.status,
+            time_stamp: error.time_stamp,
+            message: error.message,
+            ..Default::default()
+        };
+
+        return Ok(response_model.self_response());
+    }
+
+    let user_service = UserService::new(db);
+
+    match user_service.update_to_db(token.unwrap().claims.id, user.0) {
+        Ok(user_in_db) => Ok(user_in_db),
+        Err(error) => Err(error),
     }
 }
