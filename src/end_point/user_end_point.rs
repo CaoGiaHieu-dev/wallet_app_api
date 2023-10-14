@@ -3,7 +3,7 @@ use crate::models::token_model::JWT;
 use crate::models::user_model::UserModel;
 use crate::repositories::mongo_repository::MongoRepo;
 use crate::service::user_service::UserService;
-use crate::utils::helper::{create_jwt, decryption, encryption};
+use crate::utils::helper::{create_jwt, decryption, encryption, validate_token};
 use crate::utils::ErrorResponse;
 use mongodb::bson::doc;
 use mongodb::bson::oid::ObjectId;
@@ -161,22 +161,14 @@ pub fn update_user(
     user: Json<UserModel>,
     token: Result<JWT, ErrorResponse>,
 ) -> Result<Json<BaseResponseModel<UserModel>>, Status> {
-    if token.is_err() {
-        let error = token.err().unwrap().into_inner();
-
-        let response_model = BaseResponseModel {
-            status: error.status,
-            time_stamp: error.time_stamp,
-            message: error.message,
-            ..Default::default()
-        };
-
-        return Ok(response_model.self_response());
-    }
+    let user_id = match validate_token(token.clone()) {
+        Ok(id) => id,
+        Err(e) => return Ok(e.clone()),
+    };
 
     let user_service = UserService::new(db);
 
-    match user_service.update_to_db(token.unwrap().claims.id, user.0) {
+    match user_service.update_to_db(user_id, user.0) {
         Ok(user_in_db) => Ok(user_in_db),
         Err(error) => Err(error),
     }

@@ -7,13 +7,22 @@ use jsonwebtoken::{
 };
 use magic_crypt::MagicCryptTrait;
 use mongodb::bson::oid::ObjectId;
+use rocket::serde::json::Json;
 
 use std::{
     env,
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::{models::token_model::Claims, utils::constants};
+use crate::{
+    models::{
+        base_response_model::BaseResponseModel,
+        token_model::{Claims, JWT},
+    },
+    utils::constants,
+};
+
+use super::ErrorResponse;
 
 pub fn get_current_time() -> u128 {
     let start = SystemTime::now();
@@ -70,4 +79,22 @@ pub fn decode_jwt(token: String) -> Result<Claims, ErrorKind> {
         Ok(token) => Ok(token.claims),
         Err(err) => Err(err.kind().to_owned()),
     }
+}
+
+pub fn validate_token<T>(
+    token: Result<JWT, ErrorResponse>,
+) -> Result<ObjectId, Json<BaseResponseModel<T>>> {
+    if token.is_err() {
+        let error = token.clone().err().unwrap().into_inner();
+
+        let response_model = BaseResponseModel {
+            status: error.status,
+            time_stamp: error.time_stamp,
+            message: error.message,
+            data: None,
+        };
+
+        return Err(response_model.self_response());
+    }
+    return Ok(token.unwrap().claims.id);
 }

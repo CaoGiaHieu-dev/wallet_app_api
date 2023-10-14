@@ -34,14 +34,18 @@ fn rocket() -> _ {
         )
         .allow_credentials(true);
 
-    rocket::build().manage(db).manage(cors.to_cors()).mount(
-        routes::USER,
-        routes![
-            user_end_point::register,
-            user_end_point::find_user,
-            user_end_point::login,
-            user_end_point::update_user,
-            user_end_point::info,
-        ],
-    )
+    rocket::build()
+        .manage(db)
+        .manage(cors.to_cors())
+        .mount(
+            routes::AUTH,
+            routes![
+                user_end_point::register,
+                user_end_point::find_user,
+                user_end_point::login,
+                user_end_point::update_user,
+                user_end_point::info,
+            ],
+        )
+        .mount(routes::CHAT, routes![])
 }

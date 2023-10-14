@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use jsonwebtoken::errors::Error;
 use mongodb::bson::oid::ObjectId;
 use rocket::http::Status;
@@ -7,16 +9,17 @@ use rocket::serde::{Deserialize, Serialize};
 use crate::utils::ErrorResponse;
 use crate::{models::base_response_model::BaseResponseModel, utils::helper::decode_jwt};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Claims {
     pub id: ObjectId,
     pub exp: usize,
 }
 
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct JWT {
     pub claims: Claims,
 }
+
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for JWT {
     type Error = ErrorResponse;
