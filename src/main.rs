@@ -4,13 +4,15 @@ extern crate rocket;
 #[macro_use]
 extern crate magic_crypt;
 
+use std::path::{Path, PathBuf};
+
 use end_point::user_end_point;
 use repositories::mongo_repository::MongoRepo;
 use rocket_cors::{AllowedHeaders, AllowedOrigins, CorsOptions};
 
 use utils::routes;
 
-use rocket::{http::Method, routes};
+use rocket::{fs::NamedFile, http::Method, routes};
 
 mod end_point;
 mod middleware;
@@ -37,6 +39,7 @@ fn rocket() -> _ {
     rocket::build()
         .manage(db)
         .manage(cors.to_cors())
+        .mount(routes::USER_PATH, routes![user_files])
         .mount(
             routes::AUTH,
             routes![
@@ -48,4 +51,12 @@ fn rocket() -> _ {
             ],
         )
         .mount(routes::CHAT, routes![])
+}
+
+#[get("/<file..>")]
+async fn user_files(file: PathBuf) -> Option<NamedFile> {
+    println!("{:?}", file);
+    NamedFile::open(Path::new("assets/user").join(file))
+        .await
+        .ok()
 }

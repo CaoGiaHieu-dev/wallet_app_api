@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use jsonwebtoken::errors::Error;
 use mongodb::bson::oid::ObjectId;
 use rocket::http::Status;

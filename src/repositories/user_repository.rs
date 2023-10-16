@@ -49,7 +49,12 @@ impl MongoRepo {
     }
 
     pub fn find_user(&self, user: &UserModel) -> Result<UserModel, Error> {
-        match to_document(user) {
+        let mut user_doc = user.clone();
+        if user_doc.password.is_some() {
+            user_doc.password = Some(helper::encryption(user_doc.password.unwrap().to_owned()));
+        }
+
+        match to_document(&user_doc) {
             Ok(doc) => {
                 let find_result = self.user_col.find_one(doc, None);
                 match find_result {
@@ -85,8 +90,19 @@ impl MongoRepo {
     }
 
     pub fn update_user(&self, query: &UserModel, update: &UserModel) -> Result<UserModel, Error> {
-        let query_doc = to_document(&query).expect("Cannot convert query to doc");
-        let update_doc = to_document(&update).expect("Cannot convert update to doc");
+        let mut user_query = query.clone();
+        if user_query.password.is_some() {
+            user_query.password = Some(helper::encryption(user_query.password.unwrap().to_owned()));
+        }
+
+        let mut user_update = update.clone();
+        if user_update.password.is_some() {
+            user_update.password =
+                Some(helper::encryption(user_update.password.unwrap().to_owned()));
+        }
+
+        let query_doc = to_document(&user_query).expect("Cannot convert query to doc");
+        let update_doc = to_document(&user_update).expect("Cannot convert update to doc");
 
         let find_result = self
             .user_col
@@ -102,7 +118,11 @@ impl MongoRepo {
 
                 match user.upserted_id {
                     Some(bson_result) => {
-                        let user_from_bson: UserModel = bson::from_bson(bson_result).unwrap();
+                        let mut user_from_bson: UserModel = bson::from_bson(bson_result).unwrap();
+
+                        user_from_bson.password = Some(helper::decryption(
+                            user_from_bson.password.unwrap().to_owned(),
+                        ));
 
                         return Ok(user_from_bson);
                     }

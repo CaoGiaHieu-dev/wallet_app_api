@@ -3,7 +3,7 @@ use crate::models::token_model::JWT;
 use crate::models::user_model::UserModel;
 use crate::repositories::mongo_repository::MongoRepo;
 use crate::service::user_service::UserService;
-use crate::utils::helper::{create_jwt, decryption, encryption, validate_token};
+use crate::utils::helper::{create_jwt, validate_token};
 use crate::utils::ErrorResponse;
 use mongodb::bson::doc;
 use mongodb::bson::oid::ObjectId;
@@ -67,25 +67,16 @@ pub fn login(
         return Ok(BaseResponseModel::bad_request(validate_password.err()));
     }
 
-    let mut user_info = user.clone().into_inner();
-    user_info.password = Some(encryption(user_info.password.unwrap()));
+    match db.find_user(&user) {
+        Ok(finder) => {
+            let mut update = finder.clone();
+            update.token = Some(create_jwt(update.id.unwrap()).expect("Cannot generate token"));
 
-    match db.find_user(&user_info) {
-        Ok(user) => {
-            let id = user.id.expect("Cannot find user id");
-            let token = create_jwt(id).expect("Cannot generate token");
+            match db.update_user(&finder, &update) {
+                Ok(response) => {
+                    println!("response {:?}", response);
 
-            let mut user_update = user.clone();
-            user_update.token = Some(token);
-            user_update.password = Some(encryption(user.password.to_owned().unwrap()));
-
-            let mut user_query = user.clone();
-            user_query.password = Some(encryption(user.password.to_owned().unwrap()));
-
-            match db.update_user(&user_query, &user_update) {
-                Ok(mut update) => {
-                    update.password = Some(decryption(update.password.to_owned().unwrap()));
-                    Ok(BaseResponseModel::success(Some(update)))
+                    Ok(BaseResponseModel::success(Some(response)))
                 }
                 Err(e) => Ok(BaseResponseModel::internal_error(Some(e.to_string()))),
             }
@@ -130,22 +121,17 @@ pub fn info(
     db: &State<MongoRepo>,
     token: Result<JWT, ErrorResponse>,
 ) -> Result<Json<BaseResponseModel<UserModel>>, Status> {
-    if token.is_err() {
-        let error = token.err().unwrap().into_inner();
+    let user_id = match validate_token(token.clone()) {
+        Ok(id) => id,
+        Err(e) => return Ok(e.clone()),
+    };
 
-        let response_model = BaseResponseModel {
-            status: error.status,
-            time_stamp: error.time_stamp,
-            message: error.message,
-            ..Default::default()
-        };
-        return Ok(response_model.self_response());
-    }
+    println!("{:?}", user_id);
 
     let user_service = UserService::new(db);
 
     let user_info = UserModel {
-        id: Some(token.unwrap().claims.id),
+        id: Some(user_id),
         ..Default::default()
     };
 
@@ -155,7 +141,7 @@ pub fn info(
     }
 }
 
-#[post["/update_user", format = "application/json",data ="<user>"]]
+#[post["/update_user", data ="<user>"]]
 pub fn update_user(
     db: &State<MongoRepo>,
     user: Json<UserModel>,

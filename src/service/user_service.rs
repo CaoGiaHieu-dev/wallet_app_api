@@ -1,7 +1,11 @@
-use image::{io::Reader as ImageReader, ImageFormat};
+use image::io::Reader as ImageReader;
 use mongodb::bson::oid::ObjectId;
 use rocket::{http::Status, serde::json::Json, State};
-use std::{env, io::Cursor};
+use std::{
+    env, fs,
+    io::Cursor,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crate::{
     models::{base_response_model::BaseResponseModel, user_model::UserModel},
@@ -84,61 +88,80 @@ impl<'a> UserService<'a> {
             }
         }
 
-        if user_info.email.is_some() {
+        if user_info.password.is_some() {
             let password_validated = UserService::<'a>::validate_password(&user_info.password);
             if password_validated.is_err() {
                 return Ok(BaseResponseModel::bad_request(password_validated.err()));
             }
         }
 
-        let user_update = self.0.update_user(
-            &UserModel {
-                id: Some(id),
-                ..Default::default()
-            },
-            &user_info,
-        );
+        let query_user = &UserModel {
+            id: Some(id),
+            ..Default::default()
+        };
 
-        if user_update.is_err() {
-            return Ok(BaseResponseModel::internal_error(Some(
-                "Cannot Update".to_string(),
-            )));
-        }
+        let mut update_user = user_info.clone();
 
         if user_info.image.is_none() {
+            let user_update = self.0.update_user(query_user, &update_user);
+            if user_update.is_err() {
+                return Ok(BaseResponseModel::internal_error(Some(
+                    "Cannot Update".to_string(),
+                )));
+            }
             return Ok(BaseResponseModel::success(Some(user_update.unwrap())));
         }
 
-        let dynamic_image = match match ImageReader::new(Cursor::new(user_info.image.unwrap()))
-            .with_guessed_format()
-        {
-            Ok(it) => it,
-            Err(err) => {
-                println!("{:?}", err);
+        let dynamic_image =
+            match match ImageReader::new(Cursor::new(user_info.to_owned().image.unwrap()))
+                .with_guessed_format()
+            {
+                Ok(it) => it,
+                Err(_) => {
+                    return Err(Status::InternalServerError);
+                }
+            }
+            .decode()
+            {
+                Ok(it) => it,
+                Err(_) => {
+                    return Err(Status::InternalServerError);
+                }
+            };
+
+        let start = SystemTime::now();
+        let since_the_epoch: u128 = start.duration_since(UNIX_EPOCH).ok().unwrap().as_millis();
+        if user_info.image_path.is_some() {
+            if fs::remove_file(user_info.image_path.clone().unwrap()).is_err() {
                 return Err(Status::InternalServerError);
             }
         }
-        .decode()
-        {
-            Ok(it) => it,
-            Err(err) => {
-                println!("{:?}", err);
-                return Err(Status::InternalServerError);
-            }
-        };
 
-        match env::var(constants::ASSET_USER_FOLDER) {
-            Ok(path) => match dynamic_image.save_with_format(path, ImageFormat::Png) {
-                Ok(_) => Ok(BaseResponseModel::success(Some(user_update.unwrap()))),
-                Err(save_error) => {
-                    println!("{:?}", save_error);
-                    return Err(Status::InternalServerError);
-                }
-            },
-            Err(err) => {
-                println!("{:?}", err);
-                return Err(Status::InternalServerError);
+        let user_avatar_path = env::var(constants::ASSET_USER_FOLDER).unwrap()
+            + "/"
+            + &id.to_string()
+            + &since_the_epoch.to_string()
+            + ".png";
+
+        if let Err(_) = dynamic_image.save(user_avatar_path.clone()) {
+            return Err(Status::InternalServerError);
+        } else {
+            update_user.image = None;
+            update_user.image_path = Some(user_avatar_path.clone());
+
+            let update = self.0.update_user(query_user, &update_user);
+
+            if update.is_err() {
+                return Ok(BaseResponseModel::internal_error(Some(
+                    "Cannot Update".to_string(),
+                )));
             }
+
+            let mut user_update_with_image = update.clone().unwrap().clone();
+            user_update_with_image.image = None;
+            user_update_with_image.image_path = Some(user_avatar_path.clone());
+
+            Ok(BaseResponseModel::success(Some(user_update_with_image)))
         }
     }
 }
