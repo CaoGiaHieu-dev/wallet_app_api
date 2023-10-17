@@ -24,7 +24,7 @@ impl<'r> FromRequest<'r> for JWT {
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, ErrorResponse> {
         fn is_valid(key: &str) -> Result<Claims, Error> {
-            Ok(decode_jwt(String::from(key))?)
+            Ok(decode_jwt(String::from(key), None)?)
         }
 
         match req.headers().get_one("authorization") {

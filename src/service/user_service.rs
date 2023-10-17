@@ -133,7 +133,7 @@ impl<'a> UserService<'a> {
         let since_the_epoch: u128 = start.duration_since(UNIX_EPOCH).ok().unwrap().as_millis();
         if user_info.image_path.is_some() {
             if fs::remove_file(user_info.image_path.clone().unwrap()).is_err() {
-                return Err(Status::InternalServerError);
+                println!("cannot remove file")
             }
         }
 

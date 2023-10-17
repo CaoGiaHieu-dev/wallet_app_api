@@ -7,7 +7,7 @@ pub const MONGO_DB_URI: &'static str = "MONGO_URI";
 
 pub const USER_COL: &'static str = "user";
 
-pub const EXPIRED_TOKEN_TIME: i64 = 60;
+pub const EXPIRED_TOKEN_TIME: i64 = 1;
 
 // Error Message
 pub const NOT_FOUND: &'static str = "Not found";

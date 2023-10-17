@@ -1,10 +1,12 @@
 use crate::models::base_response_model::BaseResponseModel;
+use crate::models::request_header_model::RequestHeaders;
 use crate::models::token_model::JWT;
 use crate::models::user_model::UserModel;
 use crate::repositories::mongo_repository::MongoRepo;
 use crate::service::user_service::UserService;
-use crate::utils::helper::{create_jwt, validate_token};
+use crate::utils::helper::{create_jwt, decode_jwt, validate_token};
 use crate::utils::ErrorResponse;
+use jsonwebtoken::{Algorithm, Validation};
 use mongodb::bson::doc;
 use mongodb::bson::oid::ObjectId;
 use rocket::{http::Status, serde::json::Json, State};
@@ -46,6 +48,50 @@ pub fn register(
                 Ok(BaseResponseModel::bad_request(Some(message)))
             }
             _ => Ok(BaseResponseModel::internal_error(Some(e.to_string()))),
+        },
+    }
+}
+
+#[post["/renew_token", format = "application/json"]]
+
+pub fn renew_token(
+    db: &State<MongoRepo>,
+    header: RequestHeaders<'_>,
+) -> Result<Json<BaseResponseModel<String>>, Status> {
+    let token = header.get_one("authorization").expect("Cannot found token");
+
+    let mut validate = Validation::new(Algorithm::HS512);
+    validate.validate_exp = false;
+
+    match decode_jwt(token.to_string(), Some(validate)) {
+        Ok(user_claims) => {
+            let query = &UserModel {
+                id: Some(user_claims.id),
+                ..Default::default()
+            };
+            println!("{:?}", query);
+
+            match db.find_user(query) {
+                Ok(mut result) => match create_jwt(result.id.unwrap()) {
+                    Ok(new_token) => {
+                        println!("{:?}", new_token);
+
+                        result.token = Some(new_token.clone());
+
+                        match db.update_user(query, &result) {
+                            Ok(success) => {
+                                return Ok(BaseResponseModel::success(success.token));
+                            }
+                            Err(_) => return Ok(BaseResponseModel::internal_error(None)),
+                        }
+                    }
+                    Err(_) => return Ok(BaseResponseModel::internal_error(None)),
+                },
+                Err(_) => return Ok(BaseResponseModel::not_found(None)),
+            };
+        }
+        Err(error) => match error {
+            _ => return Err(Status::BadRequest),
         },
     }
 }

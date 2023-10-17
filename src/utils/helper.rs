@@ -50,7 +50,7 @@ pub fn create_jwt(id: ObjectId) -> Result<String, Error> {
     let secret = env::var(constants::SECRET_TOKEN_KEY).expect("JWT_SECRET must be set.");
 
     let expiration = Utc::now()
-        .checked_add_signed(chrono::Duration::minutes(constants::EXPIRED_TOKEN_TIME))
+        .checked_add_signed(chrono::Duration::seconds(constants::EXPIRED_TOKEN_TIME))
         .expect("Invalid timestamp")
         .timestamp();
 
@@ -67,14 +67,20 @@ pub fn create_jwt(id: ObjectId) -> Result<String, Error> {
     )
 }
 
-pub fn decode_jwt(token: String) -> Result<Claims, ErrorKind> {
+pub fn decode_jwt(token: String, validate: Option<Validation>) -> Result<Claims, ErrorKind> {
     let secret = env::var(constants::SECRET_TOKEN_KEY).expect("JWT_SECRET must be set.");
     let token = token.trim_start_matches("Bearer").trim();
+
+    let _validate = if validate.is_some() {
+        validate.unwrap()
+    } else {
+        Validation::new(Algorithm::HS512)
+    };
 
     match decode::<Claims>(
         &token,
         &DecodingKey::from_secret(secret.as_bytes()),
-        &Validation::new(Algorithm::HS512),
+        &_validate,
     ) {
         Ok(token) => Ok(token.claims),
         Err(err) => Err(err.kind().to_owned()),

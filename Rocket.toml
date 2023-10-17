@@ -26,7 +26,7 @@ log_level = "normal"
 
 [release]
 address = "127.0.0.1"
-port = 8000
+port = 9011
 workers = 12
 keep_alive = 5
 log_level = "critical"
