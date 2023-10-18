@@ -5,13 +5,15 @@ extern crate rocket;
 extern crate magic_crypt;
 
 use end_point::auth_end_point;
+use end_point::chat_end_point;
+use end_point::chat_end_point::Message;
 use repositories::mongo_repository::MongoRepo;
-
-use rocket_cors::{AllowedHeaders, AllowedOrigins, CorsOptions};
-
-use utils::routes;
-
+use rocket::tokio;
+use rocket::tokio::select;
+use rocket::tokio::sync::broadcast::{channel, error::RecvError, Sender};
 use rocket::{fs::FileServer, http::Method, routes};
+use rocket_cors::{AllowedHeaders, AllowedOrigins, CorsOptions};
+use utils::routes;
 
 mod end_point;
 mod middleware;
@@ -19,6 +21,7 @@ mod models;
 mod repositories;
 mod service;
 mod utils;
+pub mod web_socket;
 
 #[launch]
 fn rocket() -> _ {
@@ -50,5 +53,5 @@ fn rocket() -> _ {
                 auth_end_point::renew_token,
             ],
         )
-        .mount(routes::CHAT, routes![])
+        .mount("/ws", routes![web_socket::websocket_handler])
 }
