@@ -19,14 +19,14 @@ secret_token_key = "hPRYyVRiMyxpw5sBB1XeCMN1kFsDCqKvBi2QJxBVHQk="
 
 [debug]
 address = "127.0.0.1"
-port = 9011
+port = 4444
 workers = 1
 keep_alive = 0
 log_level = "normal"
 
 [release]
 address = "127.0.0.1"
-port = 9011
+port = 4444
 workers = 12
 keep_alive = 5
 log_level = "critical"

@@ -4,16 +4,19 @@ extern crate rocket;
 #[macro_use]
 extern crate magic_crypt;
 
+use std::{net::TcpStream, sync::Arc};
+
 use end_point::auth_end_point;
-use end_point::chat_end_point;
-use end_point::chat_end_point::Message;
+
 use repositories::mongo_repository::MongoRepo;
-use rocket::tokio;
-use rocket::tokio::select;
-use rocket::tokio::sync::broadcast::{channel, error::RecvError, Sender};
-use rocket::{fs::FileServer, http::Method, routes};
+
+use rocket::{
+    fs::FileServer, futures::stream::SplitSink, http::Method, routes,
+    tokio::sync::broadcast::channel,
+};
 use rocket_cors::{AllowedHeaders, AllowedOrigins, CorsOptions};
 use utils::routes;
+use web_socket::SocketEmitEvent;
 
 mod end_point;
 mod middleware;
@@ -30,16 +33,11 @@ fn rocket() -> _ {
     let cors = CorsOptions::default()
         .allowed_origins(AllowedOrigins::all())
         .allowed_headers(AllowedHeaders::All)
-        .allowed_methods(
-            vec![Method::Get, Method::Post, Method::Patch, Method::Delete]
-                .into_iter()
-                .map(From::from)
-                .collect(),
-        )
         .allow_credentials(true);
 
     rocket::build()
         .manage(db)
+        .manage(channel::<SocketEmitEvent>(1024).0)
         .manage(cors.to_cors())
         .mount(routes::USER_PATH, FileServer::from("assets/user/"))
         .mount(
@@ -53,5 +51,5 @@ fn rocket() -> _ {
                 auth_end_point::renew_token,
             ],
         )
-        .mount("/ws", routes![web_socket::websocket_handler])
+        .mount("/", routes![web_socket::echo_channel,])
 }

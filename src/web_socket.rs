@@ -1,66 +1,130 @@
-use async_tungstenite::tungstenite::Message;
-use rocket::futures::stream::{SplitSink, SplitStream};
+use jsonwebtoken::decode;
+use rocket::fs::{self, FileServer};
+use rocket::futures::channel::mpsc::Sender;
 use rocket::futures::{SinkExt, StreamExt};
-use rocket::request::{FromRequest, Request};
-use rocket::tokio::sync::Mutex;
-use rocket::State;
-use rocket::{get, response::Responder, routes, Rocket};
-use std::io::Cursor;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use tokio::net::TcpStream;
-use tokio::sync::broadcast::{channel, Sender};
-use tokio::time::{sleep, Duration};
-use tokio_tungstenite::accept_async_with_config;
-use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
-use tokio_tungstenite::WebSocketStream;
-use tungstenite::Error;
+use rocket::http::Status;
+use rocket::{Shutdown, State};
+use serde_json::{Result, Value};
+use std::borrow::Cow;
+use std::mem::MaybeUninit;
+use std::sync::mpsc::{self, Receiver};
+use std::thread::spawn;
+use ws::frame::{CloseCode, CloseFrame};
+use ws::Message;
 
-pub struct WebSocketResponder(SplitSink<WebSocketStream<TcpStream>, Message>);
+use serde::{Deserialize, Serialize};
 
-impl<'r> Responder<'r, 'static> for WebSocketResponder {
-    fn respond_to(self, _: &'r rocket::Request<'_>) -> rocket::response::Result<'static> {
-        let mut ws_sender = self.0;
+use crate::models::chat_message_model::ChatMessageModel;
+use crate::models::user_model::UserModel;
+use crate::service::chat_service::{self, ChatService};
+use crate::utils::constants::{JOIN_ROOM, SENDER_MESSAGE};
+use crate::utils::helper;
+use rocket::response::stream::{Event, EventStream};
+use rocket::tokio::sync::broadcast::{channel, error::RecvError, Sender};
 
-        let ws_response = async move {
-            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SocketEmitEvent {
+    pub event: String,
+    pub data: Option<Value>,
+}
 
-            loop {
-                interval.tick().await;
+#[get("/events")]
+fn events(queue: &State<Sender<SocketEmitEvent>>, mut end: Shutdown) -> Result<EventStream![], ()> {
+    let mut rx = queue.subscribe();
+    Ok(EventStream! {
+        loop {
+            let msg = rocket::tokio::select! {
+                msg = rx.recv() => match msg {
+                    Ok(msg) => msg,
+                    Err(RecvError::Closed) => break,
+                    Err(RecvError::Lagged(_)) => continue,
+                },
+                _ = &mut end => break,
+            };
 
-                let message = Message::Text("Hello from server!".into());
-                if let Err(err) = ws_sender.send(message.clone()).await {
-                    eprintln!("Failed to send WebSocket message: {:?}", err);
-                    break;
+            yield Event::json(&msg);
+        }
+    })
+}
+
+#[get("/echo?channel", rank = 2)]
+pub fn echo_channel(ws: ws::WebSocket) -> ws::Channel<'static> {
+    let ws = ws.config(ws::Config::default());
+
+    ws.channel(move |mut stream| {
+        Box::pin(async move {
+            while let Some(message) = stream.next().await {
+                if message.is_ok() {
+                    let message_ok = message.ok().clone();
+                    if message_ok.is_some() {
+                        let receive_message = message_ok.unwrap().to_text().unwrap().to_string();
+
+                        let decode_message = helper::decode_json(&receive_message);
+                        if decode_message.is_err() {
+                            let close = Message::Close(Some(CloseFrame {
+                                code: CloseCode::Error,
+                                reason: Cow::Owned(String::new()),
+                            }));
+                            let _ = stream.send(close).await;
+                        }
+
+                        let message_event = SocketEmitEvent::deserialize(decode_message.unwrap());
+
+                        if message_event.is_err() {
+                            let close = Message::Close(Some(CloseFrame {
+                                code: CloseCode::Error,
+                                reason: Cow::Owned(String::new()),
+                            }));
+                            let _ = stream.send(close).await;
+                        }
+
+                        let socket_emit_event = message_event.unwrap();
+
+                        let mut message_response = Message::Close(None);
+
+                        print!("{:?}", socket_emit_event.data);
+
+                        if socket_emit_event.event.to_uppercase() == SENDER_MESSAGE {
+                            let message_sender =
+                                ChatMessageModel::deserialize(socket_emit_event.data.unwrap())
+                                    .expect("Cannot parse message");
+
+                            let checker = ChatService::receive_in_room_message(&message_sender);
+
+                            print!("{:?}", checker);
+
+                            if checker.is_ok() {
+                                let _checker = checker.unwrap().clone();
+                                message_response = Message::Text(_checker.message);
+                            } else {
+                                message_response = Message::Text(checker.err().unwrap());
+                            }
+                        } else if socket_emit_event.event.to_uppercase() == JOIN_ROOM {
+                            let room_id = socket_emit_event
+                                .data
+                                .expect("Cannot match")
+                                .as_i64()
+                                .expect("Not match type");
+
+                            ChatService::join_room(room_id);
+
+                            message_response = Message::Text("Ok".to_owned());
+                        }
+
+                        let sender = stream.send(message_response).await;
+
+                        if sender.is_err() {
+                            let close = Message::Close(Some(CloseFrame {
+                                code: CloseCode::Error,
+                                reason: Cow::Owned(String::new()),
+                            }));
+                            let _ = stream.send(close).await;
+                        }
+                    }
                 }
             }
 
-            Ok::<(), Error>(())
-        };
-
-        rocket::tokio::task::spawn_blocking(move || {
-            rocket::tokio::runtime::Handle::current().block_on(ws_response)
-        });
-
-        Ok(rocket::response::Response::build()
-            .streamed_body(Cursor::new(Vec::new()))
-            .finalize())
-    }
-}
-
-#[get("/ws")]
-pub async fn websocket_handler(sender: &State<Mutex<Sender<Message>>>) -> WebSocketResponder {
-    let addr = "127.0.0.1:9011"; // Replace with the desired IP address and port
-    let stream = TcpStream::connect(addr)
-        .await
-        .expect("Failed to establish TCP connection");
-
-    let ws_config = Some(WebSocketConfig::default()); // Optional configuration
-    let ws_stream = accept_async_with_config(stream, ws_config).await.unwrap();
-
-    let (ws_sender, ws_receiver) = ws_stream.split();
-
-    let _ = ws_receiver.map(|e| println!("ws_receiver {:?}", e));
-
-    WebSocketResponder(ws_sender)
+            Ok(())
+        })
+    })
 }

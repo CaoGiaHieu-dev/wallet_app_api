@@ -8,6 +8,7 @@ use jsonwebtoken::{
 use magic_crypt::MagicCryptTrait;
 use mongodb::bson::oid::ObjectId;
 use rocket::serde::json::Json;
+use serde_json::Value;
 
 use std::{
     env,
@@ -103,4 +104,9 @@ pub fn validate_token<T>(
         return Err(response_model.self_response());
     }
     return Ok(token.unwrap().claims.id);
+}
+
+pub fn decode_json(data: &str) -> serde_json::Result<Value> {
+    let v: Value = serde_json::from_str(data)?;
+    Ok(v)
 }

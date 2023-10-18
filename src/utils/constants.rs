@@ -19,3 +19,8 @@ pub const SOME_THING_WENT_WRONG: &str = "Some thing went wrong";
 pub const INVALID_EMAIL: &'static str = "Invalid email";
 pub const EMAIL_EMPTY: &'static str = "Email cannot empty";
 pub const PASSWORD_EMPTY: &'static str = "Password cannot empty";
+
+// socket message
+
+pub const SENDER_MESSAGE: &'static str = "SENDER_MESSAGE";
+pub const JOIN_ROOM: &'static str = "JOIN_ROOM";
