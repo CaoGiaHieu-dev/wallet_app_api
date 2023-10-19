@@ -1,6 +1,4 @@
-use actix_web::{
-    body::BoxBody, http::header::ContentType, HttpRequest, HttpResponse, Responder,
-};
+use actix_web::{body::BoxBody, http::header::ContentType, HttpRequest, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 
 use crate::utils::{constants, helper::get_current_time, status_code};
