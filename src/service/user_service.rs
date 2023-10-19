@@ -1,21 +1,16 @@
 use crate::{
-    models::{base_response_model::BaseResponseModel, user_model::UserModel},
+    models::{user_model::UserModel},
     repositories::mongo_repository::MongoRepo,
     utils::{
         constants::{self},
-        helper::{self, create_jwt},
-        status_code, UserResponseResult,
+        helper::{self, create_jwt}, UserResponseResult,
     },
 };
-use actix_web::error::ParseError::Status;
-use actix_web::web::Json;
-use image::io::Reader as ImageReader;
+
+
+
 use mongodb::bson::oid::ObjectId;
-use std::{
-    env, fs,
-    io::Cursor,
-    time::{SystemTime, UNIX_EPOCH},
-};
+
 
 #[derive(Clone)]
 pub struct UserService {
@@ -88,7 +83,19 @@ impl UserService {
     }
 
     pub fn login(&self, user: &UserModel) -> UserResponseResult {
-        return self.db.find_user(user);
+        match self.db.find_user(user) {
+            Ok(mut user_found) => match create_jwt(user_found.id.expect("Cannot found id")) {
+                Ok(token) => {
+                    user_found.token = Some(token);
+                    Ok(user_found)
+                }
+                Err(e) => {
+                    let response = UserModel::internal_error(Some(e.to_string()));
+                    return Err(response);
+                }
+            },
+            Err(e) => Err(e),
+        }
     }
 
     pub fn renew_token(&self, user_id: ObjectId) -> UserResponseResult {
@@ -110,14 +117,12 @@ impl UserService {
         }
     }
 
-    // pub fn find_in_db(&self, user_info: UserModel) -> BaseResponseModel<UserModel> {
-    //     let user_detail = self.db.find_user(&user_info);
-
-    //     match user_detail {
-    //         Ok(user) => BaseResponseModel::success(Some(user)),
-    //         Err(e) => e,
-    //     }
-    // }
+    pub fn get_info(&self, user_info: UserModel) -> UserResponseResult {
+        match self.db.find_user(&user_info) {
+            Ok(user) => Ok(user),
+            Err(e) => Err(e),
+        }
+    }
 
     // pub fn update_to_db(
     //     &self,

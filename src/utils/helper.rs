@@ -7,7 +7,7 @@ use jsonwebtoken::{
 };
 use magic_crypt::MagicCryptTrait;
 use mongodb::bson::oid::ObjectId;
-use serde_json::Value;
+
 
 use std::{
     env,
@@ -15,7 +15,10 @@ use std::{
 };
 
 use crate::{
-    models::{base_response_model::BaseResponseModel, token_model::Claims},
+    models::{
+        base_response_model::BaseResponseModel,
+        token_model::{Claims},
+    },
     utils::constants,
 };
 
@@ -82,25 +85,33 @@ pub fn decode_jwt(token: String, validate: Option<Validation>) -> Result<Claims,
     }
 }
 
-// pub fn validate_token<T>(
-//     token: Result<JWT, ErrorResponse>,
-// ) -> Result<ObjectId, Json<BaseResponseModel<T>>> {
-//     if token.is_err() {
-//         let error = token.clone().err().unwrap().into_inner();
+pub fn validate_token(token: &str) -> Result<(), BaseResponseModel<()>> {
+    match decode_jwt(String::from(token), None) {
+        Ok(_) => Ok(()),
+        Err(e) => match e {
+            ErrorKind::InvalidToken => {
+                let response = BaseResponseModel::expired_token(None);
+                return Err(response);
+            }
+            ErrorKind::ExpiredSignature => {
+                let response = BaseResponseModel::expired_token(None);
+                return Err(response);
+            }
+            _ => Err(BaseResponseModel::bad_request(None)),
+        },
+    }
 
-//         let response_model = BaseResponseModel {
-//             status: error.status,
-//             time_stamp: error.time_stamp,
-//             message: error.message,
-//             data: None,
-//         };
+    // if token.claims.is_err() {
+    //     let error = token.clone().err().unwrap().into_inner();
 
-//         return Err(response_model.self_response());
-//     }
-//     return Ok(token.unwrap().claims.id);
-// }
+    //     let response_model = BaseResponseModel {
+    //         status: error.status,
+    //         time_stamp: error.time_stamp,
+    //         message: error.message,
+    //         data: None,
+    //     };
 
-pub fn decode_json(data: &str) -> serde_json::Result<Value> {
-    let v: Value = serde_json::from_str(data)?;
-    Ok(v)
+    //     return Err(response_model.self_response());
+    // }
+    // return Ok(token.unwrap().claims.id);
 }

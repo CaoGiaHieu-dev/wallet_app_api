@@ -31,6 +31,7 @@ tokio-tungstenite = "0.20.1"
 lazy_static = "1.4.0"
 env_logger = "0.10.0"
 log = "0.4.20"
+actix-web-lab = "0.19.2"
 
 [dependencies.mongodb]
 version = "2.7.0"

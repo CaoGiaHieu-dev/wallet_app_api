@@ -1,5 +1,5 @@
 use actix_web::{
-    body::BoxBody, http::header::ContentType, web::Json, HttpRequest, HttpResponse, Responder,
+    body::BoxBody, http::header::ContentType, HttpRequest, HttpResponse, Responder,
 };
 use serde::{Deserialize, Serialize};
 
@@ -19,7 +19,7 @@ pub struct BaseResponseModel<T: Serialize> {
 impl<T: Serialize> Responder for BaseResponseModel<T> {
     type Body = BoxBody;
 
-    fn respond_to(self, req: &HttpRequest) -> HttpResponse<Self::Body> {
+    fn respond_to(self, _req: &HttpRequest) -> HttpResponse<Self::Body> {
         let body = serde_json::to_string(&self).unwrap();
 
         HttpResponse::Ok()

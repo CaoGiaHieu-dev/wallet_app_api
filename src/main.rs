@@ -1,15 +1,12 @@
 #[macro_use]
 extern crate magic_crypt;
 
-use std::{
-    net::TcpStream,
-    sync::{Arc, Mutex},
-};
+
 
 use actix_web::{error, middleware, web, App, HttpResponse, HttpServer};
 use end_point::auth_end_point;
 use env_logger;
-use mongodb::Client;
+
 use repositories::mongo_repository::MongoRepo;
 use utils::routes;
 
@@ -27,8 +24,6 @@ pub mod web_socket;
 async fn main() {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
-    log::info!("starting HTTP server at http://localhost:8080");
-
     let mongodb_repo = MongoRepo::init();
     // let database = web::Data::new(mongodb_repo.clone());
 
@@ -43,12 +38,15 @@ async fn main() {
     HttpServer::new(move || {
         App::new()
             .wrap(middleware::Logger::default())
+            .wrap(actix_web_lab::middleware::CatchPanic::default())
             // .app_data(database.clone())
             .app_data(json_config.clone())
             .service(
                 web::scope(routes::AUTH)
                     .app_data(user_service.clone())
                     .service(auth_end_point::register)
+                    .service(auth_end_point::renew_token)
+                    .service(auth_end_point::info)
                     .service(auth_end_point::login),
             )
     })

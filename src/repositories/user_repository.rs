@@ -1,14 +1,14 @@
 extern crate dotenv;
 use super::mongo_repository::MongoRepo;
-use crate::models::base_response_model::BaseResponseModel;
+
 use crate::models::user_model::UserModel;
-use crate::utils::constants;
+
 use crate::utils::helper;
 use crate::utils::UserResponseResult;
 use mongodb::bson;
 use mongodb::bson::doc;
 use mongodb::bson::to_document;
-use mongodb::{bson::extjson::de::Error, results::InsertOneResult};
+
 
 impl MongoRepo {
     pub fn find_user(&self, user: &UserModel) -> UserResponseResult {

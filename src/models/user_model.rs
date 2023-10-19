@@ -1,4 +1,6 @@
-use actix_web::{body::MessageBody, http::Error};
+use actix_web::{
+    web::Json,
+};
 use mongodb::bson::oid::ObjectId;
 
 use serde::{Deserialize, Serialize};
@@ -24,7 +26,15 @@ pub struct UserModel {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
 }
+impl actix_web::Responder for UserModel {
+    type Body = actix_web::body::BoxBody;
 
+    fn respond_to(self, _req: &actix_web::HttpRequest) -> actix_web::HttpResponse<Self::Body> {
+        let body = Json(&self);
+
+        return actix_web::HttpResponse::Ok().json(body).into();
+    }
+}
 impl UserModel {
     pub fn success(&self) -> BaseResponseModel<UserModel> {
         return BaseResponseModel {
