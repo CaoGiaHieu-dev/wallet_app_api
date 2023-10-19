@@ -1,10 +1,11 @@
 use jsonwebtoken::decode;
+use rocket::form::Form;
 use rocket::fs::{self, FileServer};
-use rocket::futures::channel::mpsc::Sender;
 use rocket::futures::{SinkExt, StreamExt};
 use rocket::http::Status;
+use rocket::serde::json::Json;
 use rocket::{Shutdown, State};
-use serde_json::{Result, Value};
+use serde_json::Value;
 use std::borrow::Cow;
 use std::mem::MaybeUninit;
 use std::sync::mpsc::{self, Receiver};
@@ -22,16 +23,22 @@ use crate::utils::helper;
 use rocket::response::stream::{Event, EventStream};
 use rocket::tokio::sync::broadcast::{channel, error::RecvError, Sender};
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocketEmitEvent {
     pub event: String,
     pub data: Option<Value>,
 }
 
+#[post("/message", data = "<form>")]
+pub fn post(form: Json<SocketEmitEvent>, queue: &State<Sender<Json<SocketEmitEvent>>>) {
+    // A send 'fails' if there are no active subscribers. That's okay.
+    let _res = queue.send(form.clone());
+}
+
 #[get("/events")]
-fn events(queue: &State<Sender<SocketEmitEvent>>, mut end: Shutdown) -> Result<EventStream![], ()> {
+pub fn events(queue: &State<Sender<SocketEmitEvent>>, mut end: Shutdown) -> EventStream![] {
     let mut rx = queue.subscribe();
-    Ok(EventStream! {
+    EventStream! {
         loop {
             let msg = rocket::tokio::select! {
                 msg = rx.recv() => match msg {
@@ -44,7 +51,7 @@ fn events(queue: &State<Sender<SocketEmitEvent>>, mut end: Shutdown) -> Result<E
 
             yield Event::json(&msg);
         }
-    })
+    }
 }
 
 #[get("/echo?channel", rank = 2)]

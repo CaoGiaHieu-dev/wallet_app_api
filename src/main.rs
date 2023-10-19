@@ -51,5 +51,5 @@ fn rocket() -> _ {
                 auth_end_point::renew_token,
             ],
         )
-        .mount("/", routes![web_socket::echo_channel,])
+        .mount("/", routes![web_socket::echo_channel, web_socket::events,])
 }
