@@ -8,6 +8,7 @@ use mongodb::sync::{Client, Collection};
 
 #[derive(Clone)]
 pub struct MongoRepo {
+    pub client: Client,
     pub user_col: Collection<UserModel>,
 }
 
@@ -22,6 +23,7 @@ impl MongoRepo {
         let db = client.database(constants::DB_NAME);
 
         let user_col: Collection<UserModel> = db.collection(constants::USER_COL);
-        MongoRepo { user_col }
+
+        return MongoRepo { client, user_col };
     }
 }

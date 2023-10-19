@@ -6,27 +6,31 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rocket = { git = "https://github.com/SergioBenitez/Rocket", branch = "master", features = [
-    "json",
-] }
 
+#core
+actix-web = "4.4.0"
 serde = "1.0.147"
 dotenv = "0.15.0"
+
 magic-crypt = "3.1.9"
 email_address = "0.2.4"
 rocket-jwt = "0.5.1"
 jsonwebtoken = "9.0.0"
-rocket_cors = { git = "https://github.com/lawliet89/rocket_cors", branch = "master" }
 serde_json = "1.0.107"
 image = "0.24.7"
-chrono = "0.4.31"
 
-ws = { git = "https://github.com/SergioBenitez/Rocket", branch = "master", package = "rocket_ws" }
+
+chrono = "0.4.31"
+tokio = { version = "1", features = ["full"] }
+# ws = { git = "https://github.com/SergioBenitez/Rocket", branch = "master", package = "rocket_ws" }
+websocket = "0.27.0"
 
 
 # Socket
 tokio-tungstenite = "0.20.1"
 lazy_static = "1.4.0"
+env_logger = "0.10.0"
+log = "0.4.20"
 
 [dependencies.mongodb]
 version = "2.7.0"

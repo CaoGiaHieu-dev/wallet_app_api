@@ -3,11 +3,12 @@ pub const SECRET_CRYPT_KEY: &'static str = "SECRET_CRYPT_KEY";
 pub const ASSET_USER_FOLDER: &'static str = "ASSET_USER_FOLDER";
 
 pub const DB_NAME: &'static str = "Wallet_DB";
-pub const MONGO_DB_URI: &'static str = "MONGO_URI";
+pub const MONGO_DB_URI: &'static str = "MONGODB_URI";
 
 pub const USER_COL: &'static str = "user";
 
 pub const EXPIRED_TOKEN_TIME: i64 = 1;
+pub const AUTHORIZATION: &'static str = "Authorization";
 
 // Error Message
 pub const NOT_FOUND: &'static str = "Not found";

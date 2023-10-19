@@ -1,207 +1,185 @@
-use crate::models::base_response_model::BaseResponseModel;
-use crate::models::request_header_model::RequestHeaders;
-use crate::models::token_model::JWT;
 use crate::models::user_model::UserModel;
 use crate::repositories::mongo_repository::MongoRepo;
 use crate::service::user_service::UserService;
-use crate::utils::helper::{create_jwt, decode_jwt, validate_token};
-use crate::utils::ErrorResponse;
+use crate::utils::helper::{create_jwt, decode_jwt};
+use crate::{models::base_response_model::BaseResponseModel, utils::constants};
+use actix_web::body::BoxBody;
+use actix_web::{body::MessageBody, web::Json, HttpRequest, ResponseError};
 use jsonwebtoken::{Algorithm, Validation};
 use mongodb::bson::doc;
 use mongodb::bson::oid::ObjectId;
-use rocket::{http::Status, serde::json::Json, State};
 
-#[post("/register", format = "application/json", data = "<new_user>")]
-pub fn register(
-    db: &State<MongoRepo>,
-    new_user: Json<UserModel>,
-) -> Result<Json<BaseResponseModel<UserModel>>, Status> {
-    let validate_email = UserService::<'_>::validate_email(&new_user.email);
+use actix_web::{
+    get, post, web, App, HttpResponse, HttpResponseBuilder, HttpServer, Responder, Result,
+};
+
+#[post("/register")]
+pub async fn register(
+    user_service: web::Data<UserService>,
+    new_user: web::Json<UserModel>,
+) -> impl Responder {
+    let validate_email = user_service.validate_email(&new_user.email);
 
     if validate_email.is_err() {
-        return Ok(BaseResponseModel::bad_request(validate_email.err()));
+        return UserModel::bad_request(validate_email.err());
     }
 
-    let validate_password = UserService::<'_>::validate_password(&new_user.password);
+    let validate_password = user_service.validate_password(&new_user.password);
 
     if validate_password.is_err() {
-        return Ok(BaseResponseModel::bad_request(validate_password.err()));
-    }
-
-    let mut data = UserModel {
-        id: None,
-        email: new_user.email.to_owned(),
-        password: new_user.password.to_owned(),
-        display_name: new_user.display_name.to_owned(),
-        ..Default::default()
+        return UserModel::bad_request(validate_password.err());
     };
 
-    match db.register_user(&data) {
-        Ok(user) => {
-            let user_id = user.inserted_id.as_object_id().expect("Cannot get user id");
-            data.id = Some(user_id.clone());
-
-            Ok(BaseResponseModel::success(Some(data)))
-        }
-        Err(e) => match e {
-            mongodb::bson::extjson::de::Error::DeserializationError { message } => {
-                Ok(BaseResponseModel::bad_request(Some(message)))
-            }
-            _ => Ok(BaseResponseModel::internal_error(Some(e.to_string()))),
-        },
+    match user_service.register_user(&new_user.0) {
+        Ok(user) => return user.success(),
+        Err(e) => return e,
     }
 }
 
-#[post["/renew_token", format = "application/json"]]
-
-pub fn renew_token(
-    db: &State<MongoRepo>,
-    header: RequestHeaders<'_>,
-) -> Result<Json<BaseResponseModel<String>>, Status> {
-    let token = header.get_one("authorization").expect("Cannot found token");
-
-    let mut validate = Validation::new(Algorithm::HS512);
-    validate.validate_exp = false;
-
-    match decode_jwt(token.to_string(), Some(validate)) {
-        Ok(user_claims) => {
-            let query = &UserModel {
-                id: Some(user_claims.id),
-                ..Default::default()
-            };
-            println!("{:?}", query);
-
-            match db.find_user(query) {
-                Ok(mut result) => match create_jwt(result.id.unwrap()) {
-                    Ok(new_token) => {
-                        println!("{:?}", new_token);
-
-                        result.token = Some(new_token.clone());
-
-                        match db.update_user(query, &result) {
-                            Ok(success) => {
-                                return Ok(BaseResponseModel::success(success.token));
-                            }
-                            Err(_) => return Ok(BaseResponseModel::internal_error(None)),
-                        }
-                    }
-                    Err(_) => return Ok(BaseResponseModel::internal_error(None)),
+#[post["/renew_token"]]
+pub async fn renew_token(user_service: web::Data<UserService>, req: HttpRequest) -> impl Responder {
+    match req.headers().get(constants::AUTHORIZATION) {
+        Some(token_raw) => {
+            let token = token_raw.to_str().expect("Cannot parse token");
+            let mut validate = Validation::new(Algorithm::HS512);
+            validate.validate_exp = false;
+            match decode_jwt(token.to_string(), Some(validate)) {
+                Ok(claims) => match user_service.renew_token(claims.id.clone()) {
+                    Ok(user_result) => return HttpResponse::Ok().json(user_result).body(),
+                    Err(error) => return HttpResponse::BadRequest(),
                 },
-                Err(_) => return Ok(BaseResponseModel::not_found(None)),
-            };
+                Err(_) => HttpResponse::BadRequest(),
+            }
         }
-        Err(error) => match error {
-            _ => return Err(Status::BadRequest),
-        },
+        None => HttpResponse::BadRequest(),
     }
+
+    // let mut validate = Validation::new(Algorithm::HS512);
+    // validate.validate_exp = false;
+
+    // match decode_jwt(token.to_string(), Some(validate)) {
+    //     Ok(user_claims) => {
+    //         let query = &UserModel {
+    //             id: Some(user_claims.id),
+    //             ..Default::default()
+    //         };
+    //         println!("{:?}", query);
+
+    //         match db.find_user(query) {
+    //             Ok(mut result) => match create_jwt(result.id.unwrap()) {
+    //                 Ok(new_token) => {
+    //                     println!("{:?}", new_token);
+
+    //                     result.token = Some(new_token.clone());
+
+    //                     match db.update_user(query, &result) {
+    //                         Ok(success) => {
+    //                             return Ok(BaseResponseModel::success(success.token));
+    //                         }
+    //                         Err(_) => return Ok(BaseResponseModel::internal_error(None)),
+    //                     }
+    //                 }
+    //                 Err(_) => return Ok(BaseResponseModel::internal_error(None)),
+    //             },
+    //             Err(_) => return Ok(BaseResponseModel::not_found(None)),
+    //         };
+    //     }
+    //     Err(error) => match error {
+    //         _ => return Err(Status::BadRequest),
+    //     },
+    // }
 }
 
-#[post("/login", format = "application/json", data = "<user>")]
-pub fn login(
-    db: &State<MongoRepo>,
-    user: Json<UserModel>,
-) -> Result<Json<BaseResponseModel<UserModel>>, Status> {
-    let validate_email = UserService::<'_>::validate_email(&user.email);
+#[post("/login")]
+pub async fn login(
+    user_service: web::Data<UserService>,
+    user: web::Json<UserModel>,
+) -> impl Responder {
+    let validate_email = user_service.validate_email(&user.email);
 
     if validate_email.is_err() {
-        return Ok(BaseResponseModel::bad_request(validate_email.err()));
+        return UserModel::bad_request(validate_email.err());
     }
 
-    let validate_password = UserService::<'_>::validate_password(&user.password);
+    let validate_password = user_service.validate_password(&user.password);
 
     if validate_password.is_err() {
-        return Ok(BaseResponseModel::bad_request(validate_password.err()));
+        return UserModel::bad_request(validate_password.err());
     }
 
-    match db.find_user(&user) {
-        Ok(finder) => {
-            let mut update = finder.clone();
-            update.token = Some(create_jwt(update.id.unwrap()).expect("Cannot generate token"));
-
-            match db.update_user(&finder, &update) {
-                Ok(response) => {
-                    println!("response {:?}", response);
-
-                    Ok(BaseResponseModel::success(Some(response)))
-                }
-                Err(e) => Ok(BaseResponseModel::internal_error(Some(e.to_string()))),
-            }
-        }
-        Err(e) => match e {
-            mongodb::bson::extjson::de::Error::DeserializationError { message } => {
-                Ok(BaseResponseModel::not_found(Some(message)))
-            }
-            _ => Ok(BaseResponseModel::internal_error(Some(e.to_string()))),
-        },
+    match user_service.login(&user) {
+        Ok(finder) => return finder.success(),
+        Err(e) => return e,
     }
 }
 
-#[get("/<id>", format = "application/json")]
-pub fn find_user(
-    db: &State<MongoRepo>,
-    id: String,
-) -> Result<Json<BaseResponseModel<UserModel>>, Status> {
-    if id.is_empty() {
-        return Err(Status::BadRequest);
-    };
+// #[get("/<id>")]
+// pub async fn find_user(db: &State<web::Data<AppStateWithCounter>>, id: String) -> impl Responder {
+//     if id.is_empty() {
+//         return Err(Status::BadRequest);
+//     };
 
-    let user_service = UserService::new(db);
+//     let user_service = UserService::new(db);
 
-    match ObjectId::parse_str(id) {
-        Ok(user_id) => {
-            let user_info = UserModel {
-                id: Some(user_id),
-                ..Default::default()
-            };
+//     match ObjectId::parse_str(id) {
+//         Ok(user_id) => {
+//             let user_info = UserModel {
+//                 id: Some(user_id),
+//                 ..Default::default()
+//             };
 
-            return user_service.find_in_db(user_info);
-        }
-        Err(_) => {
-            return Err(Status::BadRequest);
-        }
-    }
-}
+//             return user_service.find_in_db(user_info);
+//         }
+//         Err(_) => {
+//             return Err(Status::BadRequest);
+//         }
+//     }
+// }
 
-#[get["/info", format = "application/json"]]
-pub fn info(
-    db: &State<MongoRepo>,
-    token: Result<JWT, ErrorResponse>,
-) -> Result<Json<BaseResponseModel<UserModel>>, Status> {
-    let user_id = match validate_token(token.clone()) {
-        Ok(id) => id,
-        Err(e) => return Ok(e.clone()),
-    };
+// #[get["/info"]]
+// pub async fn info(db: &State<web::Data<AppStateWithCounter>>, token: Result<JWT, ErrorResponse>) -> impl Responder {
 
-    println!("{:?}", user_id);
+// let token = req
+//     .headers()
+//     .get(constants::AUTHORIZATION)
+//     .expect("Missing token")
+//     .to_str()
+//     .expect("Cannot parse token");
+//     let user_id = match validate_token(token.clone()) {
+//         Ok(id) => id,
+//         Err(e) => return Ok(e.clone()),
+//     };
 
-    let user_service = UserService::new(db);
+//     println!("{:?}", user_id);
 
-    let user_info = UserModel {
-        id: Some(user_id),
-        ..Default::default()
-    };
+//     let user_service = UserService::new(db);
 
-    match user_service.find_in_db(user_info) {
-        Ok(user_in_db) => Ok(user_in_db),
-        Err(error) => Err(error),
-    }
-}
+//     let user_info = UserModel {
+//         id: Some(user_id),
+//         ..Default::default()
+//     };
 
-#[post["/update_user", data ="<user>"]]
-pub fn update_user(
-    db: &State<MongoRepo>,
-    user: Json<UserModel>,
-    token: Result<JWT, ErrorResponse>,
-) -> Result<Json<BaseResponseModel<UserModel>>, Status> {
-    let user_id = match validate_token(token.clone()) {
-        Ok(id) => id,
-        Err(e) => return Ok(e.clone()),
-    };
+//     match user_service.find_in_db(user_info) {
+//         Ok(user_in_db) => Ok(user_in_db),
+//         Err(error) => Err(error),
+//     }
+// }
 
-    let user_service = UserService::new(db);
+// #[post["/update_user"]]
+// pub async fn update_user(
+//     db: &State<web::Data<AppStateWithCounter>>,
+//     user: Json<UserModel>,
+//     token: Result<JWT, ErrorResponse>,
+// ) -> impl Responder {
+//     let user_id = match validate_token(token.clone()) {
+//         Ok(id) => id,
+//         Err(e) => return Ok(e.clone()),
+//     };
 
-    match user_service.update_to_db(user_id, user.0) {
-        Ok(user_in_db) => Ok(user_in_db),
-        Err(error) => Err(error),
-    }
-}
+//     let user_service = UserService::new(db);
+
+//     match user_service.update_to_db(user_id, user.0) {
+//         Ok(user_in_db) => Ok(user_in_db),
+//         Err(error) => Err(error),
+//     }
+// }

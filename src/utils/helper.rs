@@ -7,7 +7,6 @@ use jsonwebtoken::{
 };
 use magic_crypt::MagicCryptTrait;
 use mongodb::bson::oid::ObjectId;
-use rocket::serde::json::Json;
 use serde_json::Value;
 
 use std::{
@@ -16,14 +15,9 @@ use std::{
 };
 
 use crate::{
-    models::{
-        base_response_model::BaseResponseModel,
-        token_model::{Claims, JWT},
-    },
+    models::{base_response_model::BaseResponseModel, token_model::Claims},
     utils::constants,
 };
-
-use super::ErrorResponse;
 
 pub fn get_current_time() -> u128 {
     let start = SystemTime::now();
@@ -61,11 +55,11 @@ pub fn create_jwt(id: ObjectId) -> Result<String, Error> {
     };
 
     let header = Header::new(Algorithm::HS512);
-    encode(
+    return encode(
         &header,
         &claims,
         &EncodingKey::from_secret(secret.as_bytes()),
-    )
+    );
 }
 
 pub fn decode_jwt(token: String, validate: Option<Validation>) -> Result<Claims, ErrorKind> {
@@ -88,23 +82,23 @@ pub fn decode_jwt(token: String, validate: Option<Validation>) -> Result<Claims,
     }
 }
 
-pub fn validate_token<T>(
-    token: Result<JWT, ErrorResponse>,
-) -> Result<ObjectId, Json<BaseResponseModel<T>>> {
-    if token.is_err() {
-        let error = token.clone().err().unwrap().into_inner();
+// pub fn validate_token<T>(
+//     token: Result<JWT, ErrorResponse>,
+// ) -> Result<ObjectId, Json<BaseResponseModel<T>>> {
+//     if token.is_err() {
+//         let error = token.clone().err().unwrap().into_inner();
 
-        let response_model = BaseResponseModel {
-            status: error.status,
-            time_stamp: error.time_stamp,
-            message: error.message,
-            data: None,
-        };
+//         let response_model = BaseResponseModel {
+//             status: error.status,
+//             time_stamp: error.time_stamp,
+//             message: error.message,
+//             data: None,
+//         };
 
-        return Err(response_model.self_response());
-    }
-    return Ok(token.unwrap().claims.id);
-}
+//         return Err(response_model.self_response());
+//     }
+//     return Ok(token.unwrap().claims.id);
+// }
 
 pub fn decode_json(data: &str) -> serde_json::Result<Value> {
     let v: Value = serde_json::from_str(data)?;
